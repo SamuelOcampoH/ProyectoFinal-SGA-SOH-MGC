@@ -8,14 +8,14 @@ import java.util.*;
 import java.util.stream.Collectors;
 
 public class AlojamientoSGA {
-    private final List<Apartamento> apartamentos = new ArrayList<>();
-    private final List<Huesped> huespedes = new ArrayList<>();
-    private final List<Empleado> empleados = new ArrayList<>();
-    private final List<Reserva> reservas = new ArrayList<>();
-    private final List<PeriodoTemporada> temporadas = new ArrayList<>();
-    private final List<BloqueoApartamento> bloqueos = new ArrayList<>();
-    private final List<Novedad> novedades = new ArrayList<>();
-    private final List<ConflictoCanal> conflictosCanal = new ArrayList<>();
+    private List<Apartamento> apartamentos = new ArrayList<>();
+    private List<Huesped> huespedes = new ArrayList<>();
+    private List<Empleado> empleados = new ArrayList<>();
+    private List<Reserva> reservas = new ArrayList<>();
+    private List<PeriodoTemporada> temporadas = new ArrayList<>();
+    private List<BloqueoApartamento> bloqueos = new ArrayList<>();
+    private List<Novedad> novedades = new ArrayList<>();
+    private List<ConflictoCanal> conflictosCanal = new ArrayList<>();
     private PoliticaCancelacion politicaActual = PoliticaCancelacion.estandar();
 
     public AlojamientoSGA() {
@@ -115,3 +115,91 @@ public class AlojamientoSGA {
         reservas.add(r);
         return r;
     }
+
+    public ReservaExterna recibirReservaExterna(String codigoInterno, String codigoExterno, Huesped titular,
+                                                Apartamento apt, LocalDate entrada, LocalDate salida, List<Ocupante> ocupantes) {
+        boolean duplicado = reservas.stream()
+                .filter(r -> r instanceof ReservaExterna)
+                .map(r -> (ReservaExterna) r)
+                .anyMatch(re -> re.getCodigoExterno().equalsIgnoreCase(codigoExterno));
+        if (duplicado) {
+            throw new IllegalArgumentException("Código externo duplicado: " + codigoExterno);
+        }
+        if (entrada.isBefore(LocalDate.now()) || !salida.isAfter(entrada)) {
+            throw new IllegalArgumentException("Fechas inválidas para reserva externa.");
+        }
+        if (!estaDisponible(apt, entrada, salida)) {
+            conflictosCanal.add(new ConflictoCanal(codigoExterno, apt.getCodigo(), entrada, salida,
+                    LocalDateTime.now(), "Choque con reserva vigente o bloqueo"));
+            throw new IllegalStateException("Conflicto de canal registrado: el apartamento ya está ocupado en esas fechas.");
+        }
+        long valor = cotizarEstancia(apt, entrada, salida, ocupantes, null);
+        ReservaExterna r = new ReservaExterna(codigoInterno, codigoExterno, titular, apt, entrada, salida, ocupantes, valor, politicaActual);
+        reservas.add(r);
+        return r;
+    }
+
+    private void validarCreacionReserva(Apartamento apt, LocalDate entrada, LocalDate salida, List<Ocupante> ocupantes) {
+        if (entrada.isBefore(LocalDate.now())) {
+            throw new IllegalArgumentException("No se permiten reservas con entrada anterior a hoy.");
+        }
+        if (!salida.isAfter(entrada)) {
+            throw new IllegalArgumentException("La salida debe ser posterior a la entrada.");
+        }
+        if (ocupantes.size() > apt.getCapacidadMaxima()) {
+            throw new IllegalArgumentException("Supera la capacidad máxima del apartamento.");
+        }
+        if (!estaDisponible(apt, entrada, salida)) {
+            throw new IllegalStateException("El apartamento no está disponible en esas fechas (doble venta evitada).");
+        }
+    }
+
+    public void registrarHuesped(Huesped h) {
+        if (huespedes.stream().anyMatch(x -> x.getDocumento().equals(h.getDocumento()))) {
+            throw new IllegalArgumentException("Documento ya registrado.");
+        }
+        huespedes.add(h);
+    }
+
+    public void registrarApartamento(Apartamento apt) {
+        if (apartamentos.stream().anyMatch(a -> a.getCodigo().equalsIgnoreCase(apt.getCodigo()))) {
+            throw new IllegalArgumentException("Código de apartamento ya existe.");
+        }
+        apartamentos.add(apt);
+    }
+
+    public void registrarBloqueo(BloqueoApartamento bloqueo) {
+        bloqueos.add(bloqueo);
+    }
+
+    public void registrarNovedad(Novedad novedad) {
+        novedades.add(novedad);
+    }
+
+    public void agregarPeriodoTemporada(PeriodoTemporada periodo) {
+        temporadas.add(periodo);
+    }
+
+    public void setPoliticaActual(PoliticaCancelacion politicaActual) {
+        this.politicaActual = politicaActual;
+    }
+
+    // Consultas y reportes
+    public List<Apartamento> getApartamentos() { return Collections.unmodifiableList(apartamentos); }
+    public List<Huesped> getHuespedes() { return Collections.unmodifiableList(huespedes); }
+    public List<Empleado> getEmpleados() { return Collections.unmodifiableList(empleados); }
+    public List<Reserva> getReservas() { return Collections.unmodifiableList(reservas); }
+    public List<Novedad> getNovedades() { return Collections.unmodifiableList(novedades); }
+    public List<ConflictoCanal> getConflictosCanal() { return Collections.unmodifiableList(conflictosCanal); }
+
+    public long calcularIngresosTotales() {
+        return reservas.stream().mapToLong(r -> r.getFolio().getTotalPagadoNeto()).sum();
+    }
+
+    public long calcularSaldosPendientesTotales() {
+        return reservas.stream()
+                .filter(r -> r.getEstado().esActiva())
+                .mapToLong(r -> r.getFolio().getSaldoPendiente())
+                .sum();
+    }
+}

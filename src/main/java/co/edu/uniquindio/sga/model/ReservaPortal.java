@@ -18,3 +18,4 @@ public class ReservaPortal extends Reserva {
         long anticipoMinimo = Math.round(getValorEstanciaCongelado() * 0.30);
         return getFolio().getTotalPagadoNeto() >= anticipoMinimo;
     }
+}

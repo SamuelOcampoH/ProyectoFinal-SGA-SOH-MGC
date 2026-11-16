@@ -6,18 +6,18 @@ import java.time.LocalDateTime;
 import java.time.temporal.ChronoUnit;
 import java.util.List;
 
-public abstract class Reserva<Apartamento> implements Facturable {
-    private final String codigo;
-    private final Huesped titular;
-    private final Apartamento apartamento;
-    private final LocalDate fechaEntrada;
-    private final LocalDate fechaSalida;
-    private final List<Ocupante> ocupantes;
-    private final long valorEstanciaCongelado;
-    private final PoliticaCancelacion politicaCongelada;
-    private final LocalDateTime fechaCreacion;
+public abstract class Reserva implements Facturable {
+    private String codigo;
+    private Huesped titular;
+    private Apartamento apartamento;
+    private LocalDate fechaEntrada;
+    private LocalDate fechaSalida;
+    private List<Ocupante> ocupantes;
+    private long valorEstanciaCongelado;
+    private PoliticaCancelacion politicaCongelada;
+    private LocalDateTime fechaCreacion;
     private EstadoReserva estado;
-    private final Folio folio;
+    private Folio folio;
     private long devolucionRegistrada;
 
     protected Reserva(String codigo, Huesped titular, Apartamento apartamento,
@@ -126,7 +126,9 @@ public abstract class Reserva<Apartamento> implements Facturable {
         }
         this.devolucionRegistrada = 0;
         this.estado = EstadoReserva.NO_SHOW;
-    } public boolean solapaCon(LocalDate otraEntrada, LocalDate otraSalida) {
+    }
+
+    public boolean solapaCon(LocalDate otraEntrada, LocalDate otraSalida) {
         return this.fechaEntrada.isBefore(otraSalida) && otraEntrada.isBefore(this.fechaSalida);
     }
 
