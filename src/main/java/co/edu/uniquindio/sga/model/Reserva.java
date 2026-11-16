@@ -6,7 +6,7 @@ import java.time.LocalDateTime;
 import java.time.temporal.ChronoUnit;
 import java.util.List;
 
-public abstract class Reserva implements Facturable {
+public abstract class Reserva<Apartamento> implements Facturable {
     private final String codigo;
     private final Huesped titular;
     private final Apartamento apartamento;
@@ -126,4 +126,29 @@ public abstract class Reserva implements Facturable {
         }
         this.devolucionRegistrada = 0;
         this.estado = EstadoReserva.NO_SHOW;
+    } public boolean solapaCon(LocalDate otraEntrada, LocalDate otraSalida) {
+        return this.fechaEntrada.isBefore(otraSalida) && otraEntrada.isBefore(this.fechaSalida);
     }
+
+    @Override
+    public long calcularValorTotal() {
+        return folio.getTotalCargos();
+    }
+
+    @Override
+    public String obtenerDetalleFacturacion() {
+        return String.format("Reserva %s [%s] | Cargos: $%,d | Pagado: $%,d | Saldo: $%,d",
+                codigo, getCanal(), folio.getTotalCargos(), folio.getTotalPagadoNeto(), folio.getSaldoPendiente());
+    }
+
+    public String getCodigo() { return codigo; }
+    public Huesped getTitular() { return titular; }
+    public Apartamento getApartamento() { return apartamento; }
+    public LocalDate getFechaEntrada() { return fechaEntrada; }
+    public LocalDate getFechaSalida() { return fechaSalida; }
+    public List<Ocupante> getOcupantes() { return ocupantes; }
+    public long getValorEstanciaCongelado() { return valorEstanciaCongelado; }
+    public EstadoReserva getEstado() { return estado; }
+    public Folio getFolio() { return folio; }
+    public long getDevolucionRegistrada() { return devolucionRegistrada; }
+}
