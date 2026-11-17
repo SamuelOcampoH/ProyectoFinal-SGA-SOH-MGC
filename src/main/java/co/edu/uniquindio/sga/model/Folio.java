@@ -78,4 +78,8 @@ public class Folio {
             throw new IllegalArgumentException("El concepto es obligatorio.");
         }
     }
+    public void registrarCargo(String concepto, long monto) {
+        if (monto <= 0) throw new IllegalArgumentException("El monto del cargo debe ser positivo.");
+        movimientos.add(new MovimientoFolio(LocalDateTime.now(), concepto, monto, false, null));
+    }
 }

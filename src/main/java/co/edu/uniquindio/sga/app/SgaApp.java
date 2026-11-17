@@ -291,7 +291,7 @@ public class SgaApp extends Application {
         btnCheckIn.setOnAction(e -> ejecutarSobreReserva(lv, r -> r.hacerCheckIn(r.getFechaEntrada(), LocalDateTime.now()), cargar));
         btnCheckOut.setOnAction(e -> ejecutarSobreReserva(lv, r -> r.hacerCheckOut(LocalDateTime.now()), cargar));
         btnNoShow.setOnAction(e -> ejecutarSobreReserva(lv, Reserva::declararNoShow, cargar));
-        btnCargoExtra.setOnAction(e -> ejecutarSobreReserva(lv, r -> r.getFolio().registrarCargo("Servicio Desayuno", 25000), cargar));
+        btnCargoExtra.setOnAction(e -> ejecutarSobreReserva(lv, r -> r.getFolio().registrarCargo("Servicio Desayuno", 25000L), cargar));
         btnAbonoTotal.setOnAction(e -> ejecutarSobreReserva(lv, r -> {
             long saldo = r.getFolio().getSaldoPendiente();
             if (saldo > 0) r.getFolio().registrarPago(saldo, MedioPago.TARJETA);
