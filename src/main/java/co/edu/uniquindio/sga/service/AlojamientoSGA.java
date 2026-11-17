@@ -1,4 +1,4 @@
-package co.edu.uniquindio.sga.model;
+package co.edu.uniquindio.sga.service;
 
 import co.edu.uniquindio.sga.model.*;
 
