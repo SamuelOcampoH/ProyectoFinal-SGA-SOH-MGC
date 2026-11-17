@@ -1,4 +1,4 @@
-package co.edu.uniquindio.sga.model;
+package co.edu.uniquindio.sga.app;
 
 import co.edu.uniquindio.sga.model.*;
 import co.edu.uniquindio.sga.service.AlojamientoSGA;
@@ -164,3 +164,278 @@ public class SgaApp extends Application {
         txtDesglose.setPrefRowCount(6);
 
         Button btnReservar = new Button("Crear Reserva Portal");
+
+        btnBuscar.setOnAction(e -> {
+            try {
+                int total = spAdultos.getValue() + spMenores.getValue();
+                lvAptos.getItems().setAll(sga.buscarDisponibles(dpEntrada.getValue(), dpSalida.getValue(), total));
+                txtDesglose.clear();
+            } catch (Exception ex) {
+                alerta(Alert.AlertType.ERROR, "Error", ex.getMessage());
+            }
+        });
+
+        lvAptos.getSelectionModel().selectedItemProperty().addListener((obs, oldV, apt) -> {
+            if (apt != null) {
+                List<Ocupante> oc = generarOcupantesDemo(huesped, spAdultos.getValue(), spMenores.getValue());
+                List<String> lineas = new ArrayList<>();
+                long total = sga.cotizarEstancia(apt, dpEntrada.getValue(), dpSalida.getValue(), oc, lineas);
+                txtDesglose.setText(String.join("\n", lineas) + String.format("\nTOTAL ESTANCIA: $%,d COP (Anticipo 30%%: $%,d)",
+                        total, Math.round(total * 0.30)));
+            }
+        });
+
+        btnReservar.setOnAction(e -> {
+            Apartamento apt = lvAptos.getSelectionModel().getSelectedItem();
+            if (apt == null) return;
+            try {
+                List<Ocupante> oc = generarOcupantesDemo(huesped, spAdultos.getValue(), spMenores.getValue());
+                String cod = "RES-" + (sga.getReservas().size() + 101);
+                ReservaPortal r = sga.crearReservaPortal(cod, huesped, apt, dpEntrada.getValue(), dpSalida.getValue(), oc);
+                alerta(Alert.AlertType.INFORMATION, "Reserva Creada", "Código: " + r.getCodigo() + " en estado PENDIENTE.");
+                btnBuscar.fire();
+            } catch (Exception ex) {
+                alerta(Alert.AlertType.ERROR, "Error", ex.getMessage());
+            }
+        });
+
+        box.getChildren().addAll(filtros, new Label("Apartamentos Disponibles:"), lvAptos,
+                new Label("Cotización Noche por Noche:"), txtDesglose, btnReservar);
+        tab.setContent(box);
+        return tab;
+    }
+
+    private Tab crearTabMisReservas(Huesped huesped) {
+        Tab tab = new Tab("Mis Reservas y Pagos");
+        tab.setClosable(false);
+        VBox box = new VBox(10);
+        box.setPadding(new Insets(15));
+
+        ListView<String> lv = new ListView<>();
+        Button btnRefrescar = new Button("Actualizar Lista");
+        Button btnPagarAnticipo = new Button("Pagar 30% y Confirmar");
+        Button btnCancelar = new Button("Cancelar Reserva Seleccionada");
+
+        Runnable cargar = () -> {
+            lv.getItems().clear();
+            for (Reserva r : sga.getReservas()) {
+                if (r.getTitular().getDocumento().equals(huesped.getDocumento())) {
+                    lv.getItems().add(r.getCodigo() + " | " + r.getApartamento().getCodigo() + " | " +
+                            r.getFechaEntrada() + " a " + r.getFechaSalida() + " | " + r.getEstado() +
+                            " | Saldo: $" + r.getFolio().getSaldoPendiente());
+                }
+            }
+        };
+        cargar.run();
+        btnRefrescar.setOnAction(e -> cargar.run());
+
+        btnPagarAnticipo.setOnAction(e -> {
+            Reserva r = obtenerReservaSeleccionada(lv);
+            if (r == null) return;
+            try {
+                long anticipo = Math.round(r.getValorEstanciaCongelado() * 0.30);
+                r.getFolio().registrarPago(anticipo, MedioPago.TRANSFERENCIA);
+                r.confirmar();
+                alerta(Alert.AlertType.INFORMATION, "Confirmada", "Pago registrado y reserva CONFIRMADA.");
+                cargar.run();
+            } catch (Exception ex) {
+                alerta(Alert.AlertType.ERROR, "Error", ex.getMessage());
+            }
+        });
+
+        btnCancelar.setOnAction(e -> {
+            Reserva r = obtenerReservaSeleccionada(lv);
+            if (r == null) return;
+            try {
+                long dev = r.cancelar(LocalDateTime.now());
+                alerta(Alert.AlertType.INFORMATION, "Cancelada", String.format("Reserva cancelada. Devolución calculada: $%,d COP", dev));
+                cargar.run();
+            } catch (Exception ex) {
+                alerta(Alert.AlertType.ERROR, "Error", ex.getMessage());
+            }
+        });
+
+        box.getChildren().addAll(new HBox(10, btnRefrescar, btnPagarAnticipo, btnCancelar), lv);
+        tab.setContent(box);
+        return tab;
+    }
+
+    private Tab crearTabOperacionRecepcion() {
+        Tab tab = new Tab("Recepción: Reservas, Check-In / Out y Folios");
+        tab.setClosable(false);
+        VBox box = new VBox(10);
+        box.setPadding(new Insets(15));
+
+        ListView<String> lv = new ListView<>();
+        Button btnRefrescar = new Button("Refrescar Reservas");
+        Button btnConfirmar = new Button("Confirmar");
+        Button btnCheckIn = new Button("Check-In");
+        Button btnCheckOut = new Button("Check-Out");
+        Button btnNoShow = new Button("Declarar No-Show");
+        Button btnAbonoTotal = new Button("Registrar Pago Total Saldo");
+        Button btnCargoExtra = new Button("Agregar Cargo Desayuno ($25.000)");
+        Button btnSimularExterna = new Button("Simular Reserva Externa (Choque/Éxito)");
+
+        Runnable cargar = () -> {
+            lv.getItems().clear();
+            for (Reserva r : sga.getReservas()) {
+                lv.getItems().add(r.getCodigo() + " | [" + r.getCanal() + "] | " + r.getApartamento().getCodigo() +
+                        " | " + r.getTitular().getNombre() + " | " + r.getFechaEntrada() + "->" + r.getFechaSalida() +
+                        " | Estado: " + r.getEstado() + " | Saldo: $" + r.getFolio().getSaldoPendiente());
+            }
+        };
+        cargar.run();
+        btnRefrescar.setOnAction(e -> cargar.run());
+
+        btnConfirmar.setOnAction(e -> ejecutarSobreReserva(lv, r -> r.confirmar(), cargar));
+        btnCheckIn.setOnAction(e -> ejecutarSobreReserva(lv, r -> r.hacerCheckIn(r.getFechaEntrada(), LocalDateTime.now()), cargar));
+        btnCheckOut.setOnAction(e -> ejecutarSobreReserva(lv, r -> r.hacerCheckOut(LocalDateTime.now()), cargar));
+        btnNoShow.setOnAction(e -> ejecutarSobreReserva(lv, Reserva::declararNoShow, cargar));
+        btnCargoExtra.setOnAction(e -> ejecutarSobreReserva(lv, r -> r.getFolio().registrarCargo("Servicio Desayuno", 25000), cargar));
+        btnAbonoTotal.setOnAction(e -> ejecutarSobreReserva(lv, r -> {
+            long saldo = r.getFolio().getSaldoPendiente();
+            if (saldo > 0) r.getFolio().registrarPago(saldo, MedioPago.TARJETA);
+        }, cargar));
+
+        btnSimularExterna.setOnAction(e -> {
+            try {
+                Huesped h = sga.getHuespedes().get(0);
+                Apartamento apt = sga.getApartamentos().get(0);
+                sga.recibirReservaExterna("EXT-" + (sga.getReservas().size() + 1), "BOOKING-" + System.currentTimeMillis() % 10000,
+                        h, apt, LocalDate.now().plusDays(1), LocalDate.now().plusDays(3),
+                        List.of(new Ocupante(h.getNombre(), h.getFechaNacimiento())));
+                alerta(Alert.AlertType.INFORMATION, "Externa Recibida", "Reserva externa ingresada sin conflictos.");
+                cargar.run();
+            } catch (Exception ex) {
+                alerta(Alert.AlertType.WARNING, "Conflicto de Canal", ex.getMessage());
+            }
+        });
+
+        box.getChildren().addAll(
+                new HBox(8, btnRefrescar, btnConfirmar, btnCheckIn, btnCheckOut, btnNoShow),
+                new HBox(8, btnCargoExtra, btnAbonoTotal, btnSimularExterna),
+                lv
+        );
+        tab.setContent(box);
+        return tab;
+    }
+
+    private Tab crearTabApartamentosYNovedades() {
+        Tab tab = new Tab("Apartamentos y Novedades");
+        tab.setClosable(false);
+        VBox box = new VBox(10);
+        box.setPadding(new Insets(15));
+
+        ListView<Apartamento> lv = new ListView<>();
+        lv.getItems().setAll(sga.getApartamentos());
+
+        Button btnPreparado = new Button("Marcar PREPARADO");
+        Button btnEnPrep = new Button("Marcar EN_PREPARACION");
+        Button btnFuera = new Button("Marcar FUERA_DE_SERVICIO");
+        Button btnNovedad = new Button("Registrar Novedad");
+
+        btnPreparado.setOnAction(e -> cambiarEstadoApto(lv, EstadoApartamento.PREPARADO, null));
+        btnEnPrep.setOnAction(e -> cambiarEstadoApto(lv, EstadoApartamento.EN_PREPARACION, null));
+        btnFuera.setOnAction(e -> {
+            TextInputDialog d = new TextInputDialog("Mantenimiento preventivo");
+            d.setHeaderText("Motivo obligatorio para Fuera de Servicio:");
+            d.showAndWait().ifPresent(m -> cambiarEstadoApto(lv, EstadoApartamento.FUERA_DE_SERVICIO, m));
+        });
+        btnNovedad.setOnAction(e -> {
+            Apartamento a = lv.getSelectionModel().getSelectedItem();
+            if (a == null) return;
+            TextInputDialog d = new TextInputDialog();
+            d.setHeaderText("Descripción de novedad en " + a.getCodigo() + ":");
+            d.showAndWait().ifPresent(desc -> {
+                sga.registrarNovedad(new Novedad(a.getCodigo(), LocalDateTime.now(), desc, usuarioActual.toString()));
+                alerta(Alert.AlertType.INFORMATION, "Novedad Guardada", "Registrada correctamente.");
+            });
+        });
+
+        box.getChildren().addAll(new HBox(10, btnPreparado, btnEnPrep, btnFuera, btnNovedad), lv);
+        tab.setContent(box);
+        return tab;
+    }
+
+    private Tab crearTabAdminReportes() {
+        Tab tab = new Tab("Administración y Reportes");
+        tab.setClosable(false);
+        VBox box = new VBox(12);
+        box.setPadding(new Insets(15));
+
+        TextArea txtReporte = new TextArea();
+        txtReporte.setEditable(false);
+        txtReporte.setPrefRowCount(15);
+
+        Button btnGenerar = new Button("Generar Reporte Consolidado SGA");
+        btnGenerar.setOnAction(e -> {
+            StringBuilder sb = new StringBuilder("=== REPORTE GERENCIAL APARTA-SUITES UQ ===\n");
+            sb.append(String.format("Ingresos Recaudados Netos: $%,d COP\n", sga.calcularIngresosTotales()));
+            sb.append(String.format("Saldos Pendientes Activos: $%,d COP\n", sga.calcularSaldosPendientesTotales()));
+            sb.append("Total Reservas Registradas: ").append(sga.getReservas().size()).append("\n");
+            sb.append("Conflictos de Canal Externa Rechazados: ").append(sga.getConflictosCanal().size()).append("\n");
+            sb.append("Novedades Reportadas: ").append(sga.getNovedades().size()).append("\n\n--- DETALLE RESERVAS ---\n");
+            sga.getReservas().forEach(r -> sb.append(r.obtenerDetalleFacturacion()).append(" | Estado: ").append(r.getEstado()).append("\n"));
+            txtReporte.setText(sb.toString());
+        });
+
+        box.getChildren().addAll(btnGenerar, txtReporte);
+        tab.setContent(box);
+        return tab;
+    }
+
+    private void cambiarEstadoApto(ListView<Apartamento> lv, EstadoApartamento est, String motivo) {
+        Apartamento a = lv.getSelectionModel().getSelectedItem();
+        if (a == null) return;
+        try {
+            a.cambiarEstado(est, motivo);
+            lv.refresh();
+        } catch (Exception ex) {
+            alerta(Alert.AlertType.ERROR, "Error", ex.getMessage());
+        }
+    }
+
+    private interface AccionReserva { void ejecutar(Reserva r) throws Exception; }
+
+    private void ejecutarSobreReserva(ListView<String> lv, AccionReserva accion, Runnable refrescar) {
+        Reserva r = obtenerReservaSeleccionada(lv);
+        if (r == null) return;
+        try {
+            accion.ejecutar(r);
+            refrescar.run();
+        } catch (Exception ex) {
+            alerta(Alert.AlertType.ERROR, "Regla de Negocio", ex.getMessage());
+        }
+    }
+
+    private Reserva obtenerReservaSeleccionada(ListView<String> lv) {
+        String sel = lv.getSelectionModel().getSelectedItem();
+        if (sel == null) return null;
+        String cod = sel.split("\\|")[0].trim();
+        return sga.getReservas().stream().filter(r -> r.getCodigo().equals(cod)).findFirst().orElse(null);
+    }
+
+    private List<Ocupante> generarOcupantesDemo(Huesped titular, int adultos, int menores) {
+        List<Ocupante> lista = new ArrayList<>();
+        lista.add(new Ocupante(titular.getNombre(), titular.getFechaNacimiento()));
+        for (int i = 1; i < adultos; i++) {
+            lista.add(new Ocupante("Acompañante Adulto " + i, LocalDate.now().minusYears(25)));
+        }
+        for (int i = 1; i <= menores; i++) {
+            lista.add(new Ocupante("Menor " + i, LocalDate.now().minusYears(3)));
+        }
+        return lista;
+    }
+
+    private void alerta(Alert.AlertType tipo, String titulo, String msg) {
+        Alert a = new Alert(tipo);
+        a.setTitle(titulo);
+        a.setHeaderText(null);
+        a.setContentText(msg);
+        a.showAndWait();
+    }
+
+    public static void main(String[] args) {
+        launch(args);
+    }
+}
